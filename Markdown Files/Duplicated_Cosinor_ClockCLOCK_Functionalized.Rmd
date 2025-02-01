@@ -1,0 +1,283 @@
+---
+title: "Duplicated Group Cosinor Clock CLOCK Functionalized"
+output: html_document
+date: "2025-01-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# List of packages to check and install
+packages <- c("base", "cosinor", "cosinor2", "ggplot2", "grid", "gridExtra",
+        "here", "magrittr", "minpack.lm", "openxlsx", "readxl", "readr", "stats",
+        "tidyr", "dplyr")
+
+# Function to check and install missing packages
+missing_packages <- packages[!packages %in% installed.packages()[, "Package"]]
+if (length(missing_packages) > 0) {
+  install.packages(missing_packages)
+}
+
+# Load all packages
+lapply(packages, library, character.only = TRUE)
+
+library(cosinor)
+library(ggplot2)
+library(gridExtra)
+library(here)
+library(minpack.lm)
+library(readxl)
+library(readr)
+library(tidyr)
+library(dplyr)
+```
+
+
+```{r}
+# Sourcing Custom-Made Functions
+source("../outlier_detection.R")
+source("../filter_outliers.R")
+source("../extract_cosinor_clock.R")
+source("../zero_amp.R")
+source("../plot_cosinor_clock.R")
+source("../create_combined_pdf.R")
+source("../export_excel.R")
+```
+
+
+### Reading, Converting, Analyzing and Plotting Clock CLOCK 
+### Fold Changes in Rats 
+#### Reading in Clock CLOCK Administered Rat Data for 
+#### LD and rLEN
+```{r}
+# Reading Clock CLOCK Administered Rats
+readxl::read_excel(path ="../SCN PCR Data Summary.xlsx",
+                   sheet = "Clock",
+                    range ="A1:M40") ->  Circadian_Clock_CLOCK
+
+Circadian_Clock_CLOCK %>%
+  select(`Animal ID`,`Time point`, `Group`, `Normalized fold change`) %>%
+  rename("ID" = `Animal ID`, "Time" = `Time point`,
+        "Change" = `Normalized fold change`)-> Circadian_Clock_CLOCK
+
+
+# Check if 'Normalized fold change' is character and needs parsing
+if (is.character(Circadian_Clock_CLOCK$Change)) {
+  Circadian_Clock_CLOCK <- Circadian_Clock_CLOCK %>%
+    mutate(Change = parse_number(Change))
+}
+
+# Separating LD data and pivoting
+Circadian_Clock_CLOCK_LD <- Circadian_Clock_CLOCK %>%
+  filter(grepl("LD", Group)) %>%
+  mutate(
+    Time = recode(Time,
+    "ZT0" = "0", "ZT6" = "6", "ZT12" = "12", "ZT18" = "18", "ZT24" = "24")
+  ) %>%
+  pivot_wider(
+    id_cols = ID,
+    names_from = Time,
+    values_from = Change) %>%
+  select(-c(ID))
+if (!"24" %in% colnames(Circadian_Clock_CLOCK_LD)) {
+  LD_Circadian_Clock_CLOCK_Filter <- Circadian_Clock_CLOCK_LD %>%
+    mutate(`24` = `0`)}
+
+# Separating rLEN data and pivoting    
+Circadian_Clock_CLOCK_rLEN <- Circadian_Clock_CLOCK %>%
+  filter(grepl("rLEN", Group)) %>%
+  mutate(
+    Time = recode(Time,
+    "ZT0" = "0", "ZT6" = "6", "ZT12" = "12", "ZT18" = "18", "ZT24" = "24")
+  ) %>%
+  pivot_wider(
+    id_cols = ID,
+    names_from = Time,
+    values_from = Change)%>%
+  select(-c(ID))
+if (!"24" %in% colnames(Circadian_Clock_CLOCK_rLEN)) {
+  rLEN_Circadian_Clock_CLOCK_Filter <- Circadian_Clock_CLOCK_rLEN %>%
+    mutate(`24` = `0`)}
+  
+```
+
+
+#### Converting Data into Usable Format for Extracting VOIs and Plotting
+```{r}
+# Data Conversion to get Individual Points for LD Clock CLOCK 
+# Rat Model
+## X value is Zeitgeber time, Y value is # of Fold Changes
+
+# Loads Initial Dataset for LD Clock CLOCK Rats and 
+# Removes Outliers
+#outlier_detection(Circadian_Clock_CLOCK_LD) -> out_res_LDCCLOCK
+#filter_outliers(Circadian_Clock_CLOCK_LD, 
+#                out_res_LDCCLOCK) ->  LD_Circadian_Clock_CLOCK_Filter
+
+# Performs Data Carpentry on Filtered LD TNFa Dataset and Removes 'NA's,
+## filters out ZT of 24
+LD_Circadian_Clock_CLOCK_Filter %>%
+  pivot_longer(cols = c(`0`,`6`,`12`, `18`, `24`), names_to = "ZT", 
+               values_to = "Fold_Changes") %>%
+  drop_na(`Fold_Changes`) %>%
+  mutate(ZT = as.numeric(ZT)) %>%
+  arrange(ZT) -> LD_Circadian_Clock_CLOCK_Filter
+#LD_Circadian_Clock_CLOCK_Filter %>%
+  # Filter out ZT of 24
+  #filter(ZT != 24)  -> LD_Circadian_Clock_CLOCK_data
+
+# Creating Cosinor Model for LD TNFa Rat Plots
+cosinor.lm(`Fold_Changes` ~ time(ZT), period = 24,
+           data = LD_Circadian_Clock_CLOCK_Filter) -> cosMod_LD_CCLOCK
+# Creating Cosinor Model for LD TNFa Rat Data Analysis
+#cosinor.lm(`Fold_Changes` ~ time(ZT), period = 24,
+#           data = LD_Circadian_Clock_CLOCK_data) -> cosMod_LD_CCLOCK_data
+```
+
+```{r}
+# Data Conversion to get Individual Points for rLEN Clock CLOCK 
+# Rat Model X value is Zeitgeber time, Y value is # of Fold Changes
+
+# Loads Initial Dataset for rLEN Clock CLOCK Rats and Removes Outliers
+#outlier_detection(Circadian_Clock_CLOCK_rLEN) -> out_res_rLENCCLOCK
+#filter_outliers(Circadian_Clock_CLOCK_rLEN, 
+#                out_res_rLENCCLOCK) ->  rLEN_Circadian_Clock_CLOCK_Filter
+
+# Performs Data Carpentry on Filtered LD TNFa Dataset and Removes 'NA's
+rLEN_Circadian_Clock_CLOCK_Filter %>%
+  pivot_longer(cols = c(`0`,`6`,`12`, `18`, `24`), names_to = "ZT", 
+               values_to = "Fold_Changes") %>%
+  drop_na(`Fold_Changes`) %>%
+  mutate(ZT = as.numeric(ZT)) %>%
+  arrange(ZT) -> rLEN_Circadian_Clock_CLOCK_Filter
+#rLEN_Circadian_Clock_CLOCK_Filter %>%
+  # Filter out ZT of 24
+  #filter(ZT != 24)  -> rLEN_Circadian_Clock_CLOCK_data
+
+# Creating Cosinor Model for LD TNFa Rat Plots
+cosinor.lm(`Fold_Changes` ~ time(ZT), period = 24,
+           data = rLEN_Circadian_Clock_CLOCK_Filter) -> cosMod_rLEN_CCLOCK
+# Creating Cosinor Model for LD TNFa Rat Plot Data Analysis
+#cosinor.lm(`Fold_Changes` ~ time(ZT), period = 24,
+#           data = rLEN_Circadian_Clock_CLOCK_data) -> cosMod_rLEN_CCLOCK_data
+```
+
+
+#### Calculating the Y-limits for Plots of Cosinor Fit
+```{r}
+# Finding the max Y-value Across Both Datsets in Order to Set Y-limits of 
+# Future Plot
+max(rLEN_Circadian_Clock_CLOCK_Filter$`Fold_Changes`, 
+    LD_Circadian_Clock_CLOCK_Filter$`Fold_Changes`) -> CCLOCK_max
+# Calculate y_peak based on CCLOCK_max
+if (CCLOCK_max < 3) {
+   y_peak <- ceiling(CCLOCK_max / 0.25) * 0.25 
+  } else {
+  y_peak <- ceiling(CCLOCK_max / 5) * 5}
+```
+
+
+#### Creating Plots of Original Data with Cosinor Fit Overlayed for Rat Models
+```{r}
+# Creating Individual Plots of Rat Datasets w/ Cosinor Fits
+## Loads Function plot_cosinor Into Global Environment, Which Takes cosMod 
+## Model, Original Dataset, Plot Title and Desired x-breaks (currently set for
+## Zetigeber Time, to see how to change to regular time see function notes) and
+## Generates Plot of Original Data with Overlayed Cosinor Fit Model
+
+# Creating Plot for LD TNFa Rat Model
+plot_cosinor_clock(cosMod_LD_CCLOCK, LD_Circadian_Clock_CLOCK_Filter, 
+             "LD Clock CLOCK", "LD",
+             x_breaks = seq(0, 24, by = 6)) -> mod_plot_LD_CCLOCK
+
+
+# Creating Plot for rLEN TNFa Rat Model
+plot_cosinor_clock(cosMod_rLEN_CCLOCK, rLEN_Circadian_Clock_CLOCK_Filter, 
+             "rLEN Clock CLOCK", "rLEN",
+             x_breaks = seq(0, 24, by = 6)) -> mod_plot_rLEN_CCLOCK
+```
+
+
+#### Performing Cosinor Analysis for Rat Datasets
+```{r}
+# Creating Table of Data VOIs for LD Clock CLOCK Rat Model
+## Produces Table of Pertinent Values (Mesor, Amplitude, Acrophase, Bathyphase)
+## and Converts Table into Graphical Object for Figure Creation
+extract_cosinor_clock(cosMod_LD_CCLOCK, LD_Circadian_Clock_CLOCK_Filter,
+                "LD") -> LD_extract_output
+LD_CCLOCK_Results_table <- LD_extract_output$results_table
+LD_CCLOCK_Results_grob <- LD_extract_output$results_grob
+
+
+# Creating Table of Data VOIs for rLEN Clock CLOCK Rat Model
+## Produces Table of Pertinent Values (Mesor, Amplitude, Acrophase, Bathyphase)
+## and Converts Table into Graphical Object for Figure Creation
+extract_cosinor_clock(cosMod_rLEN_CCLOCK, rLEN_Circadian_Clock_CLOCK_Filter,
+                "rLEN") -> rLEN_extract_output
+rLEN_CCLOCK_Results_table <- rLEN_extract_output$results_table
+rLEN_CCLOCK_Results_grob <- rLEN_extract_output$results_grob
+```
+
+
+#### Performing Zero Amplitude Test Analysis on Rat Models
+```{r}
+# Zero-Amplitude Analysis of Cosinor Fit
+## Creating Table of Zero Amplitude VOIs for LD Clock CLOCK Rat Model
+
+# Produces Table of Pertinent Values (df1, df2, f-value, p-value) and Converts 
+# Table into Graphical Object for Figure Creation
+zero_amp(cosMod_LD_CCLOCK, "LD") -> LD_zero_output
+LD_CCLOCK_amp_test_Results <- LD_zero_output$results_table
+LD_CCLOCK_amp_test_grob <- LD_zero_output$results_grob
+
+
+# Produces Table of Pertinent Values (df1, df2, f-value, p-value) and Converts 
+# Table into Graphical Object for Figure Creation
+zero_amp(cosMod_rLEN_CCLOCK, "rLEN") -> rLEN_zero_output
+rLEN_CCLOCK_amp_test_Results <- rLEN_zero_output$results_table
+rLEN_CCLOCK_amp_test_grob <- rLEN_zero_output$results_grob
+```
+
+
+#### Creating Side-by-Side Plot Comparison of Cosinor Fit Models for LD and 
+#### rLEN Rat Models
+```{r, fig.width= 15}
+# Set the working directory to the folder where you want to save the plot
+plot_dir <- here("Combined Plots")
+# Create the directory if it does not exist
+if (!dir.exists(plot_dir)) dir.create(plot_dir)  
+
+# Save the plot as PDF in the specified directory
+pdf(file.path(plot_dir, "duplicated_combined_CCLOCK_plots.pdf"), width=15, height=6)
+grid.arrange(mod_plot_LD_CCLOCK, mod_plot_rLEN_CCLOCK, ncol = 2)
+dev.off()
+```
+
+
+#### Creating Side-by-Side Table Comparisons of Cosinor Analysis and Zero
+#### Amplitude Analysis VOIs
+```{r}
+# Set the working directory to the folder where you want to save the tables
+table_dir <- here("Combined Tables")
+# Create the directory if it does not exist
+if (!dir.exists(table_dir)) dir.create(table_dir)  
+
+headers <- c("Cosinor Parameters", "Zero Amp Parameters")
+tables <- list(LD_CCLOCK_Results_grob, LD_CCLOCK_amp_test_grob, 
+               rLEN_CCLOCK_Results_grob, rLEN_CCLOCK_amp_test_grob, NULL, NULL)
+title_text <- "Comparison of Clock CLOCK LD and rLEN Fold Change Values (w/ Duplicated Values)"
+output_file <- file.path(table_dir, "duplicated_combined_CCLOCK_tables.pdf")
+fig_width <- 7.5
+fig_height <- 10
+create_combined_pdf(headers, tables, title_text, output_file, fig_width, fig_height)
+```
+
+
+#### Exporting all Created Table Figures to Excel for Easse of
+#### Data Copying/Compiling
+```{r}
+# Creating File Marker for Table Figure Identification in Function Code
+file_abbrev <- c("CCLOCK", "duplicated")
+# Exporting Table Statistics to Excel Sheets
+export_excel(file_abbrev)
+```
