@@ -598,4 +598,4 @@ License: Distributed under the MIT License.
 
 
 
-Citation: If used in research, please cite: "Circadian Rhythm Analysis Package, [Your Name], 2023."
+Citation: If used in research, please cite: "Circadian Rhythmicity Analysis Package, [Ethan Leonard Kaye], 2023."
