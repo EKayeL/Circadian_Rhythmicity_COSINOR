@@ -586,7 +586,7 @@ Contributing: Feel free to fork the repository and submit pull requests with imp
 
 
 
-Support: For assistance, email [support@example.com] or visit [forum link].
+Support: For assistance, email [el.kaye@ufl.edu].
 
 License and Citation
 
