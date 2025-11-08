@@ -1,0 +1,384 @@
+---
+title: "Drug Group Cosinor Cervical IL-4 Functionalized"
+output: html_document
+date: "2024-12-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# List of packages to check and install
+packages <- c("base", "Cairo", "cosinor", "cosinor2","cowplot", "ggforce", "ggplot2", "ggrepel", "grid", "gridExtra",
+        "here", "magrittr", "minpack.lm", "openxlsx", "readxl", "stats", "stringr", "tidyr", "dplyr")
+
+# Function to check and install missing packages
+missing_packages <- packages[!packages %in% installed.packages()[, "Package"]]
+if (length(missing_packages) > 0) {
+  install.packages(missing_packages)
+}
+
+# Load all packages
+lapply(packages, library, character.only = TRUE)
+
+library(Cairo)
+library(cosinor)
+library(cowplot)
+library(ggforce)
+library(ggplot2)
+library(ggrepel)
+library(gridExtra)
+library(here)
+library(minpack.lm)
+library(readxl)
+library(stringr)
+library(tidyr)
+library(dplyr)
+```
+
+
+```{r}
+# Sourcing Custom-Made Functions
+source("../outlier_detection.R")
+source("../filter_outliers.R")
+source("../extract_cosinor.R")
+source("../zero_amp.R")
+source("../plot_cosinor.R")
+source("../create_combined_pdf.R")
+source("../export_excel.R")
+```
+
+
+### Reading, Converting, Analyzing and Plotting Cervical IL-4 
+### Administered Rats 
+#### Reading in Cervical IL-4 Administered Rat Data for 
+#### LD and rLEN
+```{r}
+# Reading Cervical IL-4 Administered Rats for LD
+readxl::read_excel(path ="../Summary Multiplex Data.xlsx",
+                   sheet = "Cervical",
+                    range ="N29:R34") -> LD_Circadian_Cerv_IL4_Filter
+
+# Reading Cervical IL-4 Administered Rats for rLEN
+readxl::read_excel(path ="../Summary Multiplex Data.xlsx",
+                   sheet = "Cervical",
+                    range ="U29:Y34") -> rLEN_Circadian_Cerv_IL4_Filter
+```
+
+
+#### Converting Data into Usable Format for Extracting VOIs and Plotting
+```{r}
+# Data Conversion to get Individual Points for LD Cervical IL-4 
+# Rat Model
+## X value is Zeitgeber time, Y value is Concentration in mg of Drug/Content
+
+# Loads Initial Dataset for LD Cervical IL-4 Rats and 
+# Removes Outliers
+#outlier_detection(Circadian_Cerv_IL4_LD) -> out_res_LDCIL4
+#filter_outliers(Circadian_Cerv_IL4_LD, 
+#                out_res_LDCIL4) ->  LD_Circadian_Cerv_IL4_Filter
+
+# Performs Data Carpentry on Filtered LD IL4 Dataset and Removes 'NA's,
+## filters out ZT of 24
+LD_Circadian_Cerv_IL4_Filter %>%
+  pivot_longer(cols = c(`0`,`6`,`12`, `18`, `24`), names_to = "ZT", 
+               values_to = "Concentration(mg)") %>%
+  drop_na(`Concentration(mg)`) %>%
+  mutate(ZT = as.numeric(ZT)) %>%
+  arrange(ZT) -> LD_Circadian_Cerv_IL4_Filter
+LD_Circadian_Cerv_IL4_Filter %>%
+  # Filter out ZT of 24
+  filter(ZT != 24)  -> LD_Circadian_Cerv_IL4_data
+
+# Creating Cosinor Model for LD IL4 Rat Plots
+cosinor.lm(`Concentration(mg)` ~ time(ZT), period = 24,
+           data = LD_Circadian_Cerv_IL4_Filter) -> cosMod_LD_CIL4
+# Creating Cosinor Model for LD IL4 Rat Data Analysis
+cosinor.lm(`Concentration(mg)` ~ time(ZT), period = 24,
+           data = LD_Circadian_Cerv_IL4_data) -> cosMod_LD_CIL4_data
+```
+
+```{r}
+# Data Conversion to get Individual Points for rLEN Cervical IL-4 
+# Rat Model X value is Zeitgeber time, Y value is Concentration in 
+# mg of Drug/Content
+
+# Loads Initial Dataset for rLEN Cervical IL-4 Rats and Removes Outliers
+#outlier_detection(Circadian_Cerv_IL4_rLEN) -> out_res_rLENCIL4
+#filter_outliers(Circadian_Cerv_IL4_rLEN, 
+#                out_res_rLENCIL4) ->  rLEN_Circadian_Cerv_IL4_Filter
+
+# Performs Data Carpentry on Filtered LD IL4 Dataset and Removes 'NA's
+rLEN_Circadian_Cerv_IL4_Filter %>%
+  pivot_longer(cols = c(`0`,`6`,`12`, `18`, `24`), names_to = "ZT", 
+               values_to = "Concentration(mg)") %>%
+  drop_na(`Concentration(mg)`) %>%
+  mutate(ZT = as.numeric(ZT)) %>%
+  arrange(ZT) -> rLEN_Circadian_Cerv_IL4_Filter
+rLEN_Circadian_Cerv_IL4_Filter %>%
+  # Filter out ZT of 24
+  filter(ZT != 24)  -> rLEN_Circadian_Cerv_IL4_data
+
+# Creating Cosinor Model for LD IL4 Rat Plots
+cosinor.lm(`Concentration(mg)` ~ time(ZT), period = 24,
+           data = rLEN_Circadian_Cerv_IL4_Filter) -> cosMod_rLEN_CIL4
+# Creating Cosinor Model for LD IL4 Rat Plot Data Analysis
+cosinor.lm(`Concentration(mg)` ~ time(ZT), period = 24,
+           data = rLEN_Circadian_Cerv_IL4_data) -> cosMod_rLEN_CIL4_data
+```
+
+
+#### Calculating the Y-limits for Plots of Cosinor Fit
+```{r}
+# Finding the max Y-value Across Both Datsets in Order to Set Y-limits of 
+# Future Plot
+max(rLEN_Circadian_Cerv_IL4_Filter$`Concentration(mg)`, 
+    LD_Circadian_Cerv_IL4_Filter$`Concentration(mg)`) -> CIL4_max
+ceiling(CIL4_max / 5) * 5 -> y_peak
+```
+
+
+#### Creating Plots of Original Data with Cosinor Fit Overlayed for Rat Models
+```{r}
+# Creating Individual Plots of Rat Datasets w/ Cosinor Fits
+## Loads Function plot_cosinor Into Global Environment, Which Takes cosMod 
+## Model, Original Dataset, Plot Title and Desired x-breaks (currently set for
+## Zetigeber Time, to see how to change to regular time see function notes) and
+## Generates Plot of Original Data with Overlayed Cosinor Fit Model
+
+# Creating Plot for LD IL4 Rat Model
+plot_cosinor(cosMod_LD_CIL4, LD_Circadian_Cerv_IL4_Filter, 
+             "LD Cervical IL-4", "LD",
+             x_breaks = seq(0, 24, by = 6)) -> mod_plot_LD_CIL4
+
+
+# Creating Plot for rLEN IL4 Rat Model
+plot_cosinor(cosMod_rLEN_CIL4, rLEN_Circadian_Cerv_IL4_Filter, 
+             "rLEN Cervical IL-4", "rLEN",
+             x_breaks = seq(0, 24, by = 6)) -> mod_plot_rLEN_CIL4
+```
+
+
+#### Performing Cosinor Analysis for Rat Datasets
+```{r}
+# Creating Table of Data VOIs for LD Cervical IL-4 Rat Model
+## Produces Table of Pertinent Values (Mesor, Amplitude, Acrophase, Bathyphase)
+## and Converts Table into Graphical Object for Figure Creation
+extract_cosinor(cosMod_LD_CIL4_data, LD_Circadian_Cerv_IL4_data,
+                "LD") -> LD_extract_output
+LD_CIL4_Results_table <- LD_extract_output$results_table
+LD_CIL4_Results_grob <- LD_extract_output$results_grob
+
+
+# Creating Table of Data VOIs for rLEN Cervical IL-4 Rat Model
+## Produces Table of Pertinent Values (Mesor, Amplitude, Acrophase, Bathyphase)
+## and Converts Table into Graphical Object for Figure Creation
+extract_cosinor(cosMod_rLEN_CIL4_data, rLEN_Circadian_Cerv_IL4_data,
+                "rLEN") -> rLEN_extract_output
+rLEN_CIL4_Results_table <- rLEN_extract_output$results_table
+rLEN_CIL4_Results_grob <- rLEN_extract_output$results_grob
+```
+
+
+#### Performing Zero Amplitude Test Analysis on Rat Models
+```{r}
+# Zero-Amplitude Analysis of Cosinor Fit
+## Creating Table of Zero Amplitude VOIs for LD Cervical IL-4 Rat Model
+
+# Produces Table of Pertinent Values (df1, df2, f-value, p-value) and Converts 
+# Table into Graphical Object for Figure Creation
+zero_amp(cosMod_LD_CIL4_data, "LD") -> LD_zero_output
+LD_CIL4_amp_test_Results <- LD_zero_output$results_table
+LD_CIL4_amp_test_grob <- LD_zero_output$results_grob
+
+
+# Produces Table of Pertinent Values (df1, df2, f-value, p-value) and Converts 
+# Table into Graphical Object for Figure Creation
+zero_amp(cosMod_rLEN_CIL4_data, "rLEN") -> rLEN_zero_output
+rLEN_CIL4_amp_test_Results <- rLEN_zero_output$results_table
+rLEN_CIL4_amp_test_grob <- rLEN_zero_output$results_grob
+```
+
+
+#### Creating Side-by-Side Plot Comparison of Cosinor Fit Models for LD and 
+#### rLEN Rat Models
+```{r, fig.width= 15}
+# Set the working directory to the folder where you want to save the plot
+plot_dir <- here("Combined Plots")
+# Create the directory if it does not exist
+if (!dir.exists(plot_dir)) dir.create(plot_dir)  
+
+# Save the plot as PDF in the specified directory
+pdf(file.path(plot_dir, "combined_CIL4_plots.pdf"), width=15, height=6)
+grid.arrange(mod_plot_LD_CIL4, mod_plot_rLEN_CIL4, ncol = 2)
+dev.off()
+```
+
+
+#### Creating Side-by-Side Table Comparisons of Cosinor Analysis and Zero
+#### Amplitude Analysis VOIs
+```{r}
+# Set the working directory to the folder where you want to save the tables
+table_dir <- here("Combined Tables")
+# Create the directory if it does not exist
+if (!dir.exists(table_dir)) dir.create(table_dir)  
+
+headers <- c("Cosinor Parameters", "Zero Amp Parameters")
+tables <- list(LD_CIL4_Results_grob, LD_CIL4_amp_test_grob, 
+               rLEN_CIL4_Results_grob, rLEN_CIL4_amp_test_grob, NULL, NULL)
+title_text <- "Comparison of Cervical IL-4 LD and rLEN Circadian Disruption Values"
+output_file <- file.path(table_dir, "combined_CIL4_tables.pdf")
+fig_width <- 7.5
+fig_height <- 10
+create_combined_pdf(headers, tables, title_text, output_file, fig_width, fig_height)
+```
+
+
+#### Exporting all Created Table Figures to Excel for Ease of
+#### Data Copying/Compiling
+```{r}
+# Creating File Marker for Table Figure Identification in Function Code
+file_abbrev <- "CIL4"
+# Exporting Table Statistics to Excel Sheets
+export_excel(file_abbrev)
+```
+
+
+#### Generation of Pseudo-Rayleigh Plots
+```{r}
+#### Creating a Combined Pseudo-Rayleigh Plot for Group Rhythm Visualization
+# --- Data Extraction ---
+# Extract LD Cervical IL4 (CIL4) data
+LD_CIL4_acrophase <- LD_CIL4_Results_table$Values[LD_CIL4_Results_table$Parameter == "LD Acrophase (Hrs)"]
+LD_CIL4_amplitude <- LD_CIL4_Results_table$Values[LD_CIL4_Results_table$Parameter == "LD Amplitude"]
+
+# Extract rLEN Cervical IL4 (CIL4) data
+rLEN_CIL4_acrophase <- rLEN_CIL4_Results_table$Values[rLEN_CIL4_Results_table$Parameter == "rLEN Acrophase (Hrs)"]
+rLEN_CIL4_amplitude <- rLEN_CIL4_Results_table$Values[rLEN_CIL4_Results_table$Parameter == "rLEN Amplitude"]
+
+# --- Data Preparation for Combined Plot ---
+# Create data frames for each condition
+LD_CIL4_vector_data <- data.frame(
+  Condition = "LD",
+  acrophase = LD_CIL4_acrophase,
+  amplitude = LD_CIL4_amplitude
+)
+
+rLEN_CIL4_vector_data <- data.frame(
+  Condition = "rLEN",
+  acrophase = rLEN_CIL4_acrophase,
+  amplitude = rLEN_CIL4_amplitude
+)
+
+# Combine the two data frames into a single one
+combined_CIL4_vector_data <- rbind(LD_CIL4_vector_data, rLEN_CIL4_vector_data) %>%
+  arrange(desc(amplitude))
+
+
+# --- 1. Create the Main Plot ---
+max_amplitude <- max(combined_CIL4_vector_data$amplitude, na.rm = TRUE)
+
+# maximum radius
+r_max <- max_amplitude * 1.5  
+
+# Function to generate wedge polygons for polar coordinates
+make_wedge <- function(start, end, r, n_points = 200) {
+  # Generate angles (in hours) for the arc, including start and end
+  theta <- seq(start, end, length.out = n_points + 2)  # +2 to include start and end explicitly
+  # Radius values from 0 to r_max, repeated for the arc, and back to 0
+  r_vals <- c(0, rep(r, n_points), 0)
+  # Create data frame for the closed polygon
+  data.frame(
+    x = theta[c(1, 1:n_points, n_points + 2)],  # Start, arc points, end
+    y = r_vals  # From 0 to r_max and back to 0
+  )
+}
+
+day_poly   <- make_wedge(0, 12, r_max)
+night_poly <- make_wedge(12, 24, r_max)
+
+main_plot_with_legend <- ggplot(combined_CIL4_vector_data, aes(color = Condition)) +
+  # Draw the day and night background ribbons
+  geom_polygon(data = day_poly, aes(x = x, y = y),
+               inherit.aes = FALSE, fill = "#FFFACD", alpha = 0.4) +
+  geom_polygon(data = night_poly, aes(x = x, y = y),
+               inherit.aes = FALSE, fill = "#E6E6FA", alpha = 0.4) +
+  # Arrows are drawn based on their order in the arranged data frame
+  geom_segment(
+    aes(x = acrophase, y = 0, xend = acrophase, yend = amplitude),
+    arrow = arrow(length = unit(0.3, "cm")),
+    linewidth = 1.5
+  ) +
+  # Add the sun and moon symbols as annotations
+  annotate("text", x = 6, y = max_amplitude * 1.4, label = "\u2600", size = 8) +
+  annotate("text", x = 18, y = max_amplitude * 1.4, label = "\U0001F319", size = 8) +
+  coord_polar(theta = "x", start = 0) +
+  scale_x_continuous(limits = c(0, 24), breaks = seq(0,22, by = 2)) +
+  scale_y_continuous(limits = c(0, max_amplitude * 1.5)) + 
+  scale_color_manual(values = c("LD" = "black", "rLEN" = "red")) +
+  labs(
+    title = "Cervical IL4 Group Acrophase Comparison (LD vs. rLEN)",
+    x = "Zeitgeber Time (ZT)", y = "Amplitude", color = "Condition"
+  ) +
+  theme_void() + # Start with a completely blank theme
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text.x = element_text(color = "black"),      
+    axis.title = element_text(color = "black"),
+    axis.title.y = element_text(angle = 90, vjust = 0.5),
+    panel.grid.major = element_line(color = "grey85"),
+    panel.grid.minor = element_blank(),
+    legend.position = "right"
+  )
+
+# --- 2. Create the separate amplitude legend plot ---
+
+# Build the main plot to extract the actual y-axis (radial) breaks
+plot_build_data <- ggplot_build(main_plot_with_legend)
+radial_breaks <- plot_build_data$layout$panel_params[[1]]$r.major
+
+# Filter out the break at 0, as we don't need a ring for it
+legend_rings <- data.frame(r = radial_breaks[radial_breaks > 0])
+
+# Determine the maximum radius for setting the y-limit of the legend plot
+legend_max_val <- if (length(legend_rings$r) > 0) max(legend_rings$r) else 0
+
+amplitude_legend_plot <- ggplot() +
+  # Draw circles for each break value found in the main plot
+  geom_circle(data = legend_rings, aes(x0 = 0, y0 = 0, r = r), color = "grey50") +
+  # Add text labels for each circle
+  geom_text(data = legend_rings, aes(x = 0, y = r, label = r), vjust = -0.5, size = 3) +
+  theme_void() + 
+  coord_fixed() +
+  # Set ylim to ensure the largest ring and its text aren't cut off
+  ylim(-legend_max_val, legend_max_val * 1.2)
+
+
+# --- 3. Prepare the components for the final layout ---
+
+main_plot_only <- main_plot_with_legend + theme(legend.position = "none")
+condition_legend <- cowplot::get_legend(main_plot_with_legend)
+
+# --- 4. Arrange the final figure in a three-column layout ---
+final_plot <- grid.arrange(
+  amplitude_legend_plot,
+  main_plot_only,
+  condition_legend,
+  ncol = 3,
+  widths = c(1.5, 5, 1.5)
+)
+
+# Set the working directory to the folder where you want to save PDFs
+# Use ggsave() to save the plot as a high-quality PDF
+rayleigh_dir <- here("Rayleigh Plots")
+# Create the directory if it does not exist
+if (!dir.exists(rayleigh_dir)) dir.create(rayleigh_dir)  
+ggsave(
+  filename = file.path(rayleigh_dir, "CervicalIL4_Plot.pdf"),  
+  plot = final_plot,
+  width = 8,   # Width in inches
+  height = 5,  # Height in inches
+  device = cairo_pdf,
+  # Add this line to specify the font
+  family = "Segoe UI Symbol" 
+)
+```
